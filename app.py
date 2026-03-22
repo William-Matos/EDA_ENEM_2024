@@ -10,8 +10,26 @@ st.set_page_config(page_title="Dashboard ENEM 2024",
 
 @st.cache_data
 def load_data():
-    # Usando o arquivo limpo gerado pelo conn.py
-    return pd.read_parquet("enem_2024.parquet")
+    # Carrega apenas as colunas necessárias para o dashboard
+    df = pd.read_parquet("enem_2024.parquet")
+
+    # Otimização de Memória: Converter tipos para reduzir consumo de RAM
+    # 1. Textos repetitivos -> Categorias (economiza ~90% nessas colunas)
+    cat_cols = ["regiao", "uf", "tipo_escola", "tp_lingua"]
+    for col in cat_cols:
+        if col in df.columns:
+            df[col] = df[col].astype("category")
+
+    # 2. Números float64 -> float32 (economiza 50% nessas colunas)
+    num_cols = df.select_dtypes(include=['float64']).columns
+    df[num_cols] = df[num_cols].astype('float32')
+
+    # 3. Limite de segurança: Se o arquivo for maior que o suportado pelo free tier
+    # No Streamlit Cloud free, o limite é 1GB. Acima de 500k-700k linhas fica instável.
+    if len(df) > 600000:
+        df = df.sample(600000, random_state=42)
+
+    return df
 
 
 with st.spinner("Carregando dados..."):
