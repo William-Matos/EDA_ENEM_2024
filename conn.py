@@ -1,24 +1,20 @@
+import os
 import pandas as pd
 import psycopg2 as pg
+from dotenv import load_dotenv
 
+# Carrega as variáveis do arquivo .env
+load_dotenv()
 
-def connect_to_db(host: dict):
+def connect_to_db():
     return pg.connect(
-        host=host["host"],
-        database=host["database"],
-        user=host["user"],
-        password=host["password"]
+        host=os.getenv("DB_HOST"),
+        database=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASS")
     )
 
-
-host = {
-    "host": "bigdata.dataiesb.com",
-    "database": "iesb",
-    "user": "data_iesb",
-    "password": "iesb"
-}
-
-conn = connect_to_db(host)
+conn = connect_to_db()
 curr = conn.cursor()
 
 print("Extraindo dados para o Streamlit...")
