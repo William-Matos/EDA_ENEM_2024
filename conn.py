@@ -49,7 +49,11 @@ print(f"Sucesso! {len(df)} registros carregados.")
 
 try:
     if len(df) > 500000:
-        df = df.sample(500000, random_state=42)
+        print("Realizando amostragem estratificada por região (500.000 linhas)...")
+        frac = 500000 / len(df)
+        df = df.groupby('regiao', group_keys=False).apply(
+            lambda x: x.sample(frac=frac, random_state=42)
+        )
     df.to_parquet("enem_2024.parquet", index=False)
     print("Arquivo 'enem_2024.parquet' gerado com sucesso!")
 except Exception as e:
