@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 # Carrega as variáveis do arquivo .env
 load_dotenv()
 
+
 def connect_to_db():
     return pg.connect(
         host=os.getenv("DB_HOST"),
@@ -13,6 +14,7 @@ def connect_to_db():
         user=os.getenv("DB_USER"),
         password=os.getenv("DB_PASS")
     )
+
 
 conn = connect_to_db()
 curr = conn.cursor()
@@ -46,6 +48,8 @@ df = pd.DataFrame(curr.fetchall(), columns=[
 print(f"Sucesso! {len(df)} registros carregados.")
 
 try:
+    if len(df) > 500000:
+        df = df.sample(500000, random_state=42)
     df.to_parquet("enem_2024.parquet", index=False)
     print("Arquivo 'enem_2024.parquet' gerado com sucesso!")
 except Exception as e:
