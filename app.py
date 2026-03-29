@@ -1,244 +1,254 @@
 import pandas as pd
 import streamlit as st
 import plotly.express as px
-import plotly.graph_objects as go
-import statsmodels.api as sm
+import os
 
+# Importações Modulares
+from config import MAP_COLUNAS, OPCOES_NOTAS, MAIN_COLOR_SCALE
+from utils.data_loader import load_data, get_filtered_data
+from utils.ui_components import show_kpis, show_sample_warning
+
+# --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Dashboard ENEM 2024",
                    layout="wide", page_icon="📊")
 
+# --- CARREGAMENTO INICIAL ---
+df_raw = load_data()
 
-@st.cache_data
-def load_data():
-    df = pd.read_parquet("enem_2024.parquet")
-    return df
-
-
-with st.spinner("Carregando dados..."):
-    try:
-        df_raw = load_data()
-    except FileNotFoundError:
-        st.error(
-            "Arquivo 'enem_2024.parquet' não encontrado. Por favor, execute o 'conn.py' primeiro.")
-        st.stop()
-
-# Sidebar - Filtros
+# --- SIDEBAR - FILTROS ---
 with st.sidebar:
-    st.title("⚙️ Filtros")
-    st.markdown("Personalize sua análise:")
-
-    regiao_filter = st.multiselect(
-        "Regiões",
-        options=sorted(df_raw["regiao"].unique()),
-        default=None
+    st.title("📊 Dashboard ENEM")
+    page = st.radio(
+        "Selecione a seção:",
+        ["Introdução", "Perfil do Candidato", "Análise de Frequências", "Variáveis Qualitativas",
+            "Variáveis Quantitativas", "Correlação"]
     )
 
-    # Lógica para filtro dinâmico de UF (Cascata)
+    st.divider()
+    st.header("⚙️ Filtros Globais")
+
+    # Lista de regiões únicas
+    regioes_disp = sorted(df_raw["regiao"].unique())
+    regiao_filter = st.multiselect("Regiões", options=regioes_disp)
+
+    # Filtro de UF dependente
     if regiao_filter:
-        ufs_disponiveis = sorted(
+        ufs_da_regiao = sorted(
             df_raw[df_raw["regiao"].isin(regiao_filter)]["uf"].unique())
     else:
-        ufs_disponiveis = sorted(df_raw["uf"].unique())
+        ufs_da_regiao = sorted(df_raw["uf"].unique())
 
-    uf_filter = st.multiselect(
-        "Estados (UF)",
-        options=ufs_disponiveis,
-        default=None
-    )
+    uf_filter = st.multiselect("Estados (UF)", options=ufs_da_regiao)
 
-    tipo_escola_filter = st.multiselect(
-        "Tipo de Escola",
-        options=df_raw["tipo_escola"].unique(),
-        default=None
-    )
+# Aplicação dos filtros
+df = get_filtered_data(df_raw, regiao_filter, uf_filter)
 
-    lingua_filter = st.multiselect(
-        "Língua Estrangeira",
-        options=df_raw["tp_lingua"].unique(),
-        default=None
-    )
+# --- CONTEÚDO PRINCIPAL ---
 
-df = df_raw.copy()
+if page == "Introdução":
+    st.title("👋 Bem-vindo à Análise ENEM 2024")
+    st.markdown("""
+    ### 📌 Contexto e Objetivos
+    O **Exame Nacional do Ensino Médio (ENEM)** é a principal porta de entrada para o ensino superior no Brasil. Com milhões de inscritos anualmente, o processamento e a análise de seus microdados exigem técnicas avançadas de **Big Data** e **Ciência de Dados**.
 
-if regiao_filter:
-    df = df[df["regiao"].isin(regiao_filter)]
+    Este dashboard foi desenvolvido como parte do projeto de **Análise Exploratória de Dados (AED)**, utilizando a infraestrutura do ecossistema **Big Data - IESB**. O objetivo é proporcionar uma visão clara e interativa sobre o perfil socioeconômico e o desempenho acadêmico dos candidatos de 2024.
+    """)
 
-if uf_filter:
-    df = df[df["uf"].isin(uf_filter)]
+    show_kpis(df, "Geral")
 
-if tipo_escola_filter:
-    df = df[df["tipo_escola"].isin(tipo_escola_filter)]
+    st.markdown("---")
+    
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown(f"""
+        ### 🛠️ Metodologia e Dados
+        *   **Fonte de Dados:** Banco de dados institucional **IESB (PostgreSQL)**, tabela `ed_enem_2024_resultados`.
+        *   **Amostragem Estratificada:** Para garantir fluidez, utilizamos uma amostra de **{len(df):,} registros**, distribuídos proporcionalmente por região.
+        *   **Tratamento de Dados:** Candidatos ausentes (nota 0) são automaticamente filtrados nas análises de desempenho para evitar distorções estatísticas.
+        """)
+    
+    with c2:
+        st.markdown("""
+        ### 🔍 O que você encontrará aqui:
+        *   **Perfil do Candidato:** Análise demográfica (sexo, raça, idade e escolaridade).
+        *   **Análise de Frequências:** Detalhamento estatístico de todas as variáveis do exame.
+        *   **Comparação Qualitativa:** Cruzamento de variáveis sociais e regionais.
+        *   **Desempenho (Notas):** Distribuição das notas por área de conhecimento.
+        *   **Correlações:** Identificação de padrões entre as diferentes provas.
+        """)
 
-if lingua_filter:
-    df = df[df["tp_lingua"].isin(lingua_filter)]
+    st.info("💡 **Dica:** Utilize o menu lateral à esquerda para navegar entre as diferentes dimensões de análise e aplicar filtros globais por Região ou Estado.")
 
-st.title("📊 Análise Exploratória - ENEM 2024")
-st.markdown(f"Exibindo dados de **{len(df):,}** participantes filtrados.")
-
-tab1, tab2, tab3 = st.tabs(
-    ["📋 Frequência & Qualitativas", "📈 Distribuição & Desempenho", "🔗 Correlação"])
-
-# ABA 1: DISTRIBUIÇÃO DE FREQUÊNCIA E QUALITATIVAS
-with tab1:
-    st.header("Análise de Variáveis Qualitativas")
-
-    col1, col2 = st.columns([1, 2])
-
-    with col1:
-        var_qualitativa = st.selectbox(
-            "Selecione a variável para tabela de frequência:",
-            options=["regiao", "tipo_escola", "tp_lingua", "uf"]
-        )
-
-        # Tabela de Distribuição de Frequência Robusta e Compatível
-        freq = df[var_qualitativa].value_counts().reset_index()
-        freq.columns = [var_qualitativa, "Freq. Absoluta"]
-
-        # Filtra apenas categorias com dados (substitui o 'observed=True')
-        freq = freq[freq["Freq. Absoluta"] > 0]
-
-        total_participantes = len(df)
-        if total_participantes > 0:
-            freq["Freq. Relativa (%)"] = (
-                freq["Freq. Absoluta"] / total_participantes * 100).round(2)
-        else:
-            freq["Freq. Relativa (%)"] = 0.0
-
-        st.subheader("Tabela de Frequência")
-        st.dataframe(freq, use_container_width=True)
-
-    with col2:
-        st.subheader(f"Distribuição por {var_qualitativa}")
-        fig_bar = px.bar(
-            freq, x=var_qualitativa, y="Freq. Absoluta",
-            color=var_qualitativa,
-            text_auto='.2s',
-            template="plotly_white"
-        )
-        st.plotly_chart(fig_bar, use_container_width=True, width='stretch')
-
-# ABA 2: HISTOGRAMAS E BOXPLOTS (QUANTITATIVAS)
-with tab2:
-    st.header("Análise de Variáveis Quantitativas (Notas)")
-
-    opcoes_notas = {
-        "Média Geral": "nota_media",
-        "Redação": "nota_redacao",
-        "Matemática": "nota_mt",
-        "Natureza": "nota_cn",
-        "Humanas": "nota_ch",
-        "Linguagens": "nota_lc"
-    }
-
-    col_a, col_b = st.columns(2)
-    with col_a:
-        nota_sel = st.selectbox("Selecione a nota para análise:",
-                                options=list(opcoes_notas.keys()))
-        col_nota = opcoes_notas[nota_sel]
-    with col_b:
-        agrupador = st.selectbox("Agrupar Gráficos por:", options=[
-                                 "regiao", "tipo_escola", "tp_lingua"])
+elif page == "Perfil do Candidato":
+    st.title("👤 Perfil do Candidato")
+    show_kpis(df, "Perfil do Candidato")
 
     c1, c2 = st.columns(2)
-
     with c1:
-        st.subheader(f"Histograma: {nota_sel} por {agrupador}")
-        fig_hist = px.histogram(
-            df, x=col_nota, nbins=50,
-            color=agrupador,
-            marginal="box",
-            barmode="overlay",
-            opacity=0.7,
-            template="plotly_white"
-        )
-        st.plotly_chart(fig_hist, use_container_width=True)
-
+        st.subheader("Distribuição por Sexo")
+        df_sexo = df["tp_sexo"].value_counts().reset_index()
+        fig = px.pie(df_sexo, names="tp_sexo", values="count", hole=0.4,
+                     color_discrete_sequence=MAIN_COLOR_SCALE)
+        st.plotly_chart(fig, use_container_width=True)
     with c2:
-        st.subheader(f"Box Plot: {nota_sel} por {agrupador}")
-        fig_box = px.box(
-            df, x=agrupador, y=col_nota,
-            color=agrupador,
-            template="plotly_white"
-        )
-        st.plotly_chart(fig_box, use_container_width=True)
+        st.subheader("Distribuição por Raça/Cor")
+        df_raca = df["tp_cor_raca"].value_counts().reset_index()
+        fig = px.pie(df_raca, names="tp_cor_raca", values="count", hole=0.4,
+                     color_discrete_sequence=MAIN_COLOR_SCALE,
+                     category_orders={"tp_cor_raca": df_raca["tp_cor_raca"].tolist()})
+        st.plotly_chart(fig, use_container_width=True)
 
-# ABA 3: CORRELAÇÃO
-with tab3:
-    st.header("Matriz de Correlação entre Notas")
+    st.divider()
+    c3, c4 = st.columns(2)
+    with c3:
+        st.subheader("Situação de Conclusão")
+        df_concl = df["tp_st_conclusao"].value_counts().reset_index()
+        fig = px.bar(df_concl, x="tp_st_conclusao", y="count", color="tp_st_conclusao",
+                     color_discrete_sequence=MAIN_COLOR_SCALE)
+        st.plotly_chart(fig, use_container_width=True)
+    with c4:
+        st.subheader("Faixa Etária")
+        df_idade = df["tp_faixa_etaria"].value_counts().reset_index()
+        fig = px.bar(df_idade, x="tp_faixa_etaria", y="count",
+                     color_discrete_sequence=MAIN_COLOR_SCALE)
+        st.plotly_chart(fig, use_container_width=True)
+
+elif page == "Análise de Frequências":
+    st.title("📋 Análise de Frequências")
+    show_kpis(df, "Frequências")
+
+    # --- SEÇÃO 1: DETALHAMENTO INDIVIDUAL ---
+    st.subheader("🔍 Detalhamento por Variável")
+    cols_disp = [k for k in MAP_COLUNAS.keys() if k in df.columns]
+    label_mapping = {k: MAP_COLUNAS[k] for k in cols_disp}
+
+    col_var = st.selectbox("Selecione a variável:",
+                           options=cols_disp, format_func=lambda x: label_mapping[x])
+
+    # Lógica Robusta: Pega todas as categorias da base bruta
+    categorias_mestre = sorted(df_raw[col_var].unique().tolist())
+    contagem_filtrada = df[col_var].value_counts()
+
+    # Monta o DataFrame de frequência garantindo todas as categorias
+    freq = pd.DataFrame({col_var: categorias_mestre})
+    freq["Absoluta"] = freq[col_var].map(
+        contagem_filtrada).fillna(0).astype(int)
+    freq["Relativa (%)"] = (freq["Absoluta"] / len(df)
+                            * 100).round(2) if len(df) > 0 else 0
+    freq = freq.sort_values("Absoluta", ascending=False)
+    if col_var == "tp_faixa_etaria":
+        freq = freq.sort_values(col_var)
+    else:
+        freq = freq.sort_values("Absoluta", ascending=False)
+    freq["Acumulado (%)"] = (freq["Absoluta"].cumsum() /
+                             len(df) * 100).round(2) if len(df) > 0 else 0
+
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        st.markdown(f"**Distribuição: {label_mapping[col_var]}**")
+        st.dataframe(freq, use_container_width=True, hide_index=True, height=350, column_config={
+            col_var: st.column_config.TextColumn(
+                label_mapping[col_var], width="small"
+            ),
+            "Absoluta": st.column_config.NumberColumn(
+                "Quantidade", format="localized", width="small"
+            ),
+            "Relativa (%)": st.column_config.ProgressColumn(
+                "Percentual", format="%.2f%%", min_value=0, max_value=100, width="small"
+            ),
+            "Acumulado (%)": st.column_config.ProgressColumn(
+                "Acumulado", format="%.2f%%", min_value=0, max_value=100, width="small"
+            ),
+        })
+    with c2:
+        # Gráfico mostra categorias com dados para clareza
+        fig_df = freq[freq["Absoluta"] > 0]
+        fig = px.bar(fig_df, x=col_var, y="Absoluta", color=col_var,
+                     color_discrete_sequence=MAIN_COLOR_SCALE, text_auto='.2s')
+        st.plotly_chart(fig, use_container_width=True)
+
+elif page == "Variáveis Qualitativas":
+    st.title("🎨 Comparação de Variáveis")
+    show_kpis(df, "Qualitativo")
+
+    cols_qual = [k for k in ["regiao", "tp_sexo", "tp_cor_raca",
+                             "tp_dependencia_adm_esc"] if k in df.columns]
+    var_x = st.selectbox("Eixo X:", options=cols_qual,
+                         format_func=lambda x: MAP_COLUNAS[x])
+    var_col = st.selectbox("Legenda:", options=[
+                           "tp_lingua", "tp_st_conclusao", "tp_sexo"], format_func=lambda x: MAP_COLUNAS.get(x, x))
+
+    df_agrup = df.groupby([var_x, var_col]).size().reset_index(name='count')
+    ordem_x = df[var_x].value_counts().index.tolist()
+
+    fig = px.bar(df_agrup, x=var_x, y='count', color=var_col, barmode="group",
+                 color_discrete_sequence=MAIN_COLOR_SCALE, text_auto='.2s',
+                 category_orders={var_x: ordem_x})
+    st.plotly_chart(fig, use_container_width=True)
+
+elif page == "Variáveis Quantitativas":
+    st.title("📈 Desempenho (Notas)")
+    show_kpis(df, "Variáveis Quantitativas")
+
+    nota_sel = st.selectbox("Selecione a Nota:",
+                            options=list(OPCOES_NOTAS.keys()))
+    cols_agrup = [k for k in ["regiao", "tp_sexo",
+                              "tp_dependencia_adm_esc", "q006"] if k in df.columns]
+    agrupador = st.selectbox(
+        "Agrupar por:", options=cols_agrup, format_func=lambda x: MAP_COLUNAS.get(x, x))
+
+    col_nota = OPCOES_NOTAS[nota_sel]
+    df_plot = df[df[col_nota] > 0]
+
+    if len(df_plot) > 50000:
+        df_plot_sample = df_plot.sample(50000, random_state=42)
+        show_sample_warning(50000)
+    else:
+        df_plot_sample = df_plot
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("Distribuição")
+        fig = px.histogram(df_plot_sample, x=col_nota, color=agrupador, marginal="box",
+                           opacity=0.7, color_discrete_sequence=MAIN_COLOR_SCALE)
+        st.plotly_chart(fig, use_container_width=True)
+    with c2:
+        st.subheader("Boxplot")
+        fig = px.box(df_plot_sample, x=agrupador, y=col_nota,
+                     color=agrupador, color_discrete_sequence=MAIN_COLOR_SCALE)
+        st.plotly_chart(fig, use_container_width=True)
+
+elif page == "Correlação":
+    st.title("🔗 Correlação & Dispersão")
+    show_kpis(df, "Correlação")
 
     cols_corr = ["nota_cn", "nota_ch", "nota_lc",
                  "nota_mt", "nota_redacao", "nota_media"]
-    labels_corr = ["Natureza", "Humanas",
-                   "Linguagens", "Matemática", "Redação", "Média"]
+    df_valid = df[df['nota_media'] > 0]
 
-    corr = df[cols_corr].corr()
-
-    fig_corr = px.imshow(
-        corr,
-        x=labels_corr,
-        y=labels_corr,
-        text_auto=".2f",
-        color_continuous_scale="RdBu_r",
-        zmin=-1, zmax=1,
-        title="Correlação de Pearson entre as Notas"
-    )
-    st.plotly_chart(fig_corr, use_container_width=True)
+    corr = df_valid[cols_corr].corr()
+    fig = px.imshow(corr, text_auto=".2f",
+                    color_continuous_scale="RdBu_r", zmin=-1, zmax=1)
+    st.plotly_chart(fig, use_container_width=True)
 
     st.divider()
-    st.subheader("Gráfico de Dispersão (Visualizando a Relação)")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        x_n = st.selectbox("Eixo X:", options=list(
+            OPCOES_NOTAS.keys()), index=2)
+    with c2:
+        y_n = st.selectbox("Eixo Y:", options=list(
+            OPCOES_NOTAS.keys()), index=1)
+    with c3:
+        c_n = st.selectbox("Cor:", options=[
+                           "regiao", "tp_sexo", "tp_dependencia_adm_esc"], format_func=lambda x: MAP_COLUNAS.get(x, x))
 
-    col_sc1, col_sc2, col_sc3 = st.columns(3)
+    df_sample = df_valid.sample(min(3000, len(df_valid)), random_state=42)
+    show_sample_warning(len(df_sample))
 
-    opcoes_notas_sc = {
-        "Média Geral": "nota_media",
-        "Redação": "nota_redacao",
-        "Matemática": "nota_mt",
-        "Natureza": "nota_cn",
-        "Humanas": "nota_ch",
-        "Linguagens": "nota_lc"
-    }
-
-    with col_sc1:
-        eixo_x = st.selectbox("Eixo X:", options=list(
-            opcoes_notas_sc.keys()), index=2)
-    with col_sc2:
-        eixo_y = st.selectbox("Eixo Y:", options=list(
-            opcoes_notas_sc.keys()), index=1)
-    with col_sc3:
-        cor_ponto = st.selectbox(
-            "Colorir por:", options=["regiao", "tipo_escola", "tp_lingua"], key="scatter_color")
-
-    limite_pontos = 5000
-    if len(df) > limite_pontos:
-        df_sample = df.sample(limite_pontos, random_state=42)
-        st.caption(
-            f"Exibindo uma amostra aleatória de {limite_pontos} participantes para otimizar a visualização.")
-    else:
-        df_sample = df
-
-    if eixo_x == eixo_y:
-        st.warning("Selecione variáveis diferentes para os eixos X e Y.")
-    else:
-        fig_scatter = px.scatter(
-            df_sample,
-            x=opcoes_notas_sc[eixo_x],
-            y=opcoes_notas_sc[eixo_y],
-            color=cor_ponto,
-            opacity=0.5,
-            trendline="ols",
-            title=f"Dispersão: {eixo_x} vs {eixo_y}",
-            template="plotly_white",
-            labels={opcoes_notas_sc[eixo_x]: eixo_x,
-                    opcoes_notas_sc[eixo_y]: eixo_y}
-        )
-        st.plotly_chart(fig_scatter, use_container_width=True)
-
-    st.info("""
-    **Interpretando a Correlação:**
-    *   **1.0**: Correlação positiva perfeita.
-    *   **0.0**: Nenhuma correlação.
-    *   **-1.0**: Correlação negativa perfeita.
-    """)
+    fig = px.scatter(df_sample, x=OPCOES_NOTAS[x_n], y=OPCOES_NOTAS[y_n], color=c_n,
+                     opacity=0.6, trendline="ols", color_discrete_sequence=MAIN_COLOR_SCALE)
+    st.plotly_chart(fig, use_container_width=True)
 
 st.divider()
-st.caption("Desenvolvido para análise exploratória de dados do ENEM 2024.")
+st.caption("Dashboard ENEM 2024 - Projeto de Análise Exploratória.")
