@@ -23,10 +23,12 @@ def show_kpis(data, contexto="Geral"):
             per_sexo = (data['tp_sexo'] == sexo_dom).sum() / total * 100
             raca_dom = data['tp_cor_raca'].mode()[0]
             
+            idade_dom = data['tp_faixa_etaria'].mode()[0]
+            
             c1.metric("👥 Total Filtrado", f"{total:,}")
             c2.metric("⚧️ Sexo Predominante", f"{sexo_dom}", f"{per_sexo:.1f}% do total", delta_color="off")
             c3.metric("🎨 Raça Predominante", f"{raca_dom}")
-            c4.metric("🎂 Idade Média", f"{data['tp_faixa_etaria'].mean():.1f} (Cód.)")
+            c4.metric("🎂 Idade Predominante", f"{idade_dom}")
         
     elif contexto == "Variáveis Quantitativas" or contexto == "Correlação":
         # Métricas de Performance Pura
