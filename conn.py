@@ -75,7 +75,7 @@ def amostra_estratificada(df, strata_col, n_samples, random_state=42):
 
 
 print("Realizando amostragem estratificada...")
-df_sample = amostra_estratificada(df_completo, "regiao", 500_000)
+df_sample = amostra_estratificada(df_completo, "regiao", 400_000)
 
 print(
     f"Salvando 'enem_2024_completo.parquet' com {len(df_sample)} registros...")
