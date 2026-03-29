@@ -181,8 +181,8 @@ elif page == "Estatísticas da Amostra":
     """)
 
     sample_size = st.slider("Tamanho da Amostra para Comparação",
-                            min_value=1000, max_value=min(100000, len(df_raw)),
-                            value=20000, step=1000)
+                            min_value=1000, max_value=len(df_raw),
+                            value=min(50000, len(df_raw)), step=5000)
 
     # 1. Amostra Aleatória Simples (SRS)
     df_srs = df_raw.sample(n=sample_size, random_state=42)
@@ -207,10 +207,10 @@ elif page == "Estatísticas da Amostra":
 
     df_metrics = pd.DataFrame(metrics)
     st.dataframe(df_metrics, use_container_width=True, hide_index=True, column_config={
-        "Média Geral": st.column_config.NumberColumn(format="%.2f"),
-        "Desvio Padrão": st.column_config.NumberColumn(format="%.2f"),
-        "Mediana": st.column_config.NumberColumn(format="%.2f"),
-        "Qtd Registros": st.column_config.NumberColumn(format="%d")
+        "Média Geral": st.column_config.NumberColumn("Média Geral", format="%.2f"),
+        "Desvio Padrão": st.column_config.NumberColumn("Desvio Padrão", format="%.2f"),
+        "Mediana": st.column_config.NumberColumn("Mediana", format="%.2f"),
+        "Qtd Registros": st.column_config.NumberColumn("Qtd Registros", format="%d"),
     })
 
     st.divider()
