@@ -1,3 +1,4 @@
+from config import COLS_NOTAS
 import pandas as pd
 import streamlit as st
 import plotly.express as px
@@ -15,12 +16,17 @@ st.set_page_config(page_title="Dashboard ENEM 2024",
 # --- CARREGAMENTO INICIAL ---
 df_raw = load_data()
 
+# Garantir que colunas numéricas sejam float (evita erro de Decimal do PostgreSQL)
+for col in COLS_NOTAS:
+    if col in df_raw.columns:
+        df_raw[col] = pd.to_numeric(df_raw[col], errors='coerce').astype(float)
+
 # --- SIDEBAR - FILTROS ---
 with st.sidebar:
     st.title("📊 Dashboard ENEM")
     page = st.radio(
         "Selecione a seção:",
-        ["Introdução", "Perfil do Candidato", "Análise de Frequências", "Variáveis Qualitativas",
+        ["Introdução", "Perfil do Candidato", "Análise de Frequências", "Estatísticas da Amostra", "Variáveis Qualitativas",
             "Variáveis Quantitativas", "Correlação"]
     )
 
@@ -57,7 +63,7 @@ if page == "Introdução":
     show_kpis(df, "Geral")
 
     st.markdown("---")
-    
+
     c1, c2 = st.columns(2)
     with c1:
         st.markdown(f"""
@@ -66,7 +72,7 @@ if page == "Introdução":
         *   **Amostragem Estratificada:** Para garantir fluidez, utilizamos uma amostra de **{len(df):,} registros**, distribuídos proporcionalmente por região.
         *   **Tratamento de Dados:** Candidatos ausentes (nota 0) são automaticamente filtrados nas análises de desempenho para evitar distorções estatísticas.
         """)
-    
+
     with c2:
         st.markdown("""
         ### 🔍 O que você encontrará aqui:
@@ -166,6 +172,76 @@ elif page == "Análise de Frequências":
         fig = px.bar(fig_df, x=col_var, y="Absoluta", color=col_var,
                      color_discrete_sequence=MAIN_COLOR_SCALE, text_auto='.2s')
         st.plotly_chart(fig, use_container_width=True)
+
+elif page == "Estatísticas da Amostra":
+    st.title("📊 Estatísticas e Metodologias de Amostragem")
+    st.markdown("""
+    Nesta seção, comparamos diferentes técnicas de amostragem aplicadas aos dados. 
+    A base atual já é fruto de uma **Amostragem Estratificada** (por região), o que garante a representatividade de todas as partes do Brasil.
+    """)
+
+    sample_size = st.slider("Tamanho da Amostra para Comparação",
+                            min_value=1000, max_value=min(100000, len(df_raw)),
+                            value=20000, step=1000)
+
+    # 1. Amostra Aleatória Simples (SRS)
+    df_srs = df_raw.sample(n=sample_size, random_state=42)
+
+    # 2. Amostra Sistemática
+    step = max(1, len(df_raw) // sample_size)
+    df_sys = df_raw.iloc[::step].head(sample_size)
+
+    # Métricas Comparativas
+    st.subheader("📋 Comparação de Métricas (Nota Média)")
+
+    metrics = []
+    for name, d in [("Aleatória Simples", df_srs), ("Sistemática", df_sys), ("Estratificada (Base)", df_raw)]:
+        valid = d[d['nota_media'] > 0]
+        metrics.append({
+            "Metodologia": name,
+            "Média Geral": valid['nota_media'].mean(),
+            "Desvio Padrão": valid['nota_media'].std(),
+            "Mediana": valid['nota_media'].median(),
+            "Qtd Registros": len(d)
+        })
+
+    df_metrics = pd.DataFrame(metrics)
+    st.dataframe(df_metrics, use_container_width=True, hide_index=True, column_config={
+        "Média Geral": st.column_config.NumberColumn(format="%.2f"),
+        "Desvio Padrão": st.column_config.NumberColumn(format="%.2f"),
+        "Mediana": st.column_config.NumberColumn(format="%.2f"),
+        "Qtd Registros": st.column_config.NumberColumn(format="%d")
+    })
+
+    st.divider()
+
+    # --- ANÁLISE TEXTUAL ---
+    st.subheader("📝 Análise Técnica da Amostragem")
+
+    # Cálculo de suporte para o texto
+    ref_dist = df_raw['regiao'].value_counts(normalize=True)
+    dist_srs = df_srs['regiao'].value_counts(normalize=True).reindex(
+        ref_dist.index, fill_value=0)
+    max_dev = (dist_srs - ref_dist).abs().max() * 100
+
+    st.write(f"""
+    Ao analisar os dados comparativos entre as metodologias, observamos que:
+    
+    1.  **Consistência das Médias:** As médias das amostras Aleatória e Sistemática são extremamente próximas da base original (variação geralmente < 1%). Isso ocorre devido à **Lei dos Grandes Números**, que garante que grandes amostras aleatórias convergem para a média populacional.
+    
+    2.  **Precisão Regional:** A Amostra Aleatória Simples apresentou um desvio máximo de **{max_dev:.2f} pontos percentuais** na representatividade das regiões. Embora pequeno, esse desvio demonstra que sem a estratificação, grupos regionais menores podem ter sua importância levemente alterada.
+    
+    3.  **Vantagem da Estratificação:** A metodologia estratificada (utilizada no restante deste dashboard) é a única que garante **erro zero** na distribuição regional, pois fixa as quotas por região antes da seleção.
+    
+    **Conclusão:** Para uma análise nacional do ENEM, a amostragem **Estratificada** é superior por proteger a representatividade de regiões com menos inscritos (como o Norte), evitando que o desempenho nacional seja enviesado excessivamente pelas regiões com maior volume de dados.
+    """)
+
+    with st.expander("📝 Conceitos Técnicos"):
+        st.markdown("""
+        *   **Amostra Aleatória Simples:** Seleção puramente casual. Pode omitir grupos pequenos se o tamanho da amostra for baixo.
+        *   **Amostra Sistemática:** Seleção em intervalos fixos (ex: a cada 100 registros). É eficiente mas pode sofrer se houver periodicidade nos dados.
+        *   **Amostra Estratificada (Base):** Divide a população em estratos (Regiões) e sorteia dentro de cada um. É a mais precisa para garantir diversidade geográfica.
+        """)
 
 elif page == "Variáveis Qualitativas":
     st.title("🎨 Comparação de Variáveis")
